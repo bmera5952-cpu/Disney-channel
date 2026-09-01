@@ -9,9 +9,7 @@
   <script src="https://content.jwplatform.com/libraries/SAHhwvZq.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-
     :root { --app-height: 100dvh; }
-
     html, body {
       background: #000;
       width: 100%;
@@ -26,7 +24,6 @@
       -webkit-user-select: none;
       font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     }
-
     #playerContainer {
       position: fixed;
       inset: 0;
@@ -37,7 +34,6 @@
       isolation: isolate;
       overflow: hidden;
     }
-
     #playerInner {
       position: absolute;
       inset: 0;
@@ -48,8 +44,6 @@
       pointer-events: auto;
       overflow: hidden;
     }
-
-    /* Back button */
     .back-btn {
       position: fixed;
       top: max(20px, env(safe-area-inset-top));
@@ -73,7 +67,6 @@
       pointer-events: auto;
     }
     .back-btn:hover { background: #e50914; transform: scale(1.1); }
-
     .loading-msg {
       position: absolute;
       top: 50%;
@@ -85,8 +78,6 @@
       z-index: 5;
       pointer-events: none;
     }
-
-    /* Double-tap ripple */
     .tap-ripple {
       position: fixed;
       width: 60px;
@@ -117,21 +108,22 @@
     "use strict";
 
     // ═══════════════════════════════════════════════════════════════
-    //  HARDCODED DISNEY CHANNEL DATA
+    //  CONFIGURATION
     // ═══════════════════════════════════════════════════════════════
     const CHANNEL = {
-      id: "1373",
       name: "Disney Channel",
       logo: "https://jiotv.catchup.cdn.jio.com/dare_images/images/Disney_Channel.png",
       streamUrl: "https://jiotvmblive.cdn.jio.com/bpk-tv/Disney_Channel_MOB/WDVLive/index.mpd",
-      cookie: "__hdnea__=st=1788255996~exp=1788277596~acl=/*~hmac=33d76ffa9ab217693755e2546f5090a1d5b0afd586b470bf75f035a6ed6feb8c",
       clearkey: {
         keyId: "400d0f354dca5d44a540cd80db766f4c",
         key:   "22da170bb5ae36ef5cab42b3842658d8"
       }
     };
 
-    // ── Constants ──────────────────────────────────────────────
+    // API endpoint for cookie
+    const COOKIE_API = 'https://allinonereborn2.online/jstrweb2/cookies.json';
+
+    // Jio CDN patterns and referer
     const JIO_REFS = ['jiotvpllive.cdn.jio.com','jiotv.media.jio.com','jiotvmblive.cdn.jio.com','jio.com'];
     const REF_URL  = 'https://www.jiotv.co/';
 
@@ -174,15 +166,16 @@
       });
     }
 
-    function extractToken(cookie) {
-      return String(cookie || '').match(/__hdnea__=([^;]+)/)?.[1] || '';
+    function extractTokenFromCookie(cookieString) {
+      return String(cookieString || '').match(/__hdnea__=([^;]+)/)?.[1] || '';
     }
-    function addToken(url, token) {
+
+    function addTokenToUrl(url, token) {
       if (!url || !token || url.includes('__hdnea__=')) return url;
       return `${url}${url.includes('?') ? '&' : '?'}__hdnea__=${token}`;
     }
 
-    // ── Interceptors: append token & set Referer on all Jio CDN requests ──
+    // ── Interceptors: append token & set Referer on Jio CDN requests ──
     function installInterceptors(token) {
       if (!token) return;
 
@@ -199,7 +192,7 @@
       };
       XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
         const lh = header.toLowerCase();
-        if (lh === 'user-agent') return; // cannot set UA in browser
+        if (lh === 'user-agent') return; // browser restriction
         if (lh === 'referer' && this._isJio) value = REF_URL;
         return origSetHdr.call(this, header, value);
       };
@@ -217,6 +210,27 @@
         headers.set('Referer', REF_URL);
         return origFetch.call(this, typeof input === 'string' ? patched : new Request(patched, { ...init, headers }), { ...init, headers });
       };
+    }
+
+    // ── Fetch cookie from API ─────────────────────────────────
+    async function fetchCookieToken() {
+      try {
+        const res = await fetch(COOKIE_API, { cache: 'no-store' });
+        if (!res.ok) throw new Error('Cookie API HTTP ' + res.status);
+        const data = await res.json();
+        // Find object containing cookie property
+        let cookieObj = null;
+        if (Array.isArray(data)) {
+          cookieObj = data.find(item => item && item.cookie);
+        } else if (data && data.cookie) {
+          cookieObj = data;
+        }
+        if (!cookieObj || !cookieObj.cookie) throw new Error('Cookie not found in API response');
+        return extractTokenFromCookie(cookieObj.cookie);
+      } catch (err) {
+        console.error('Cookie fetch error:', err);
+        throw err;
+      }
     }
 
     // ── DRM configuration for JW Player ────────────────────────
@@ -256,7 +270,7 @@
           preload:     'auto',
           liveTimeout: 0,
           cast:        {},
-          customHeaders: { Referer: REF_URL } // JW Player may use this for some requests
+          customHeaders: { Referer: REF_URL }
         };
         const drm = buildDRM(channel);
         if (drm) cfg.drm = drm;
@@ -503,13 +517,23 @@
       history.back();
     });
 
-    // ── Boot ──────────────────────────────────────────────────
-    const token = extractToken(CHANNEL.cookie);
-    streamUrl = addToken(CHANNEL.streamUrl, token);
-    installInterceptors(token);
-    document.title = CHANNEL.name + ' · Live';
-    applyViewportSize(false);
-    setupPlayer(CHANNEL);
+    // ── Boot sequence ──────────────────────────────────────────
+    async function boot() {
+      applyViewportSize(false);
+      try {
+        const token = await fetchCookieToken();
+        if (!token) throw new Error('Empty token received');
+        streamUrl = addTokenToUrl(CHANNEL.streamUrl, token);
+        installInterceptors(token);
+        document.title = CHANNEL.name + ' · Live';
+        setupPlayer(CHANNEL);
+      } catch (err) {
+        console.error('Boot error:', err);
+        showLoadingError('Failed to load stream: ' + err.message);
+      }
+    }
+
+    boot();
   })();
   </script>
 </body>
