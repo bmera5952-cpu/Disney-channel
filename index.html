@@ -1,1 +1,273 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Disney Channel · JioTV Plus</title>
+  <link rel="icon" type="image/png" href="https://jiotv.catchup.cdn.jio.com/dare_images/images/Disney_Channel.png" />
+
+  <!-- Shaka Player -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.11/shaka-player.ui.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.11/controls.min.css" />
+
+  <style>
+    :root {
+      --c1: #ff1ad9;
+      --c3: #00e0ff;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+    html, body {
+      background: #000;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    }
+
+    /* ── Top bar (channel info) ── */
+    .top-bar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      padding: 12px 20px;
+      background: linear-gradient(to bottom, rgba(3,0,13,0.9), transparent);
+      color: white;
+      font-weight: 700;
+      font-size: 16px;
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .top-bar img {
+      height: 28px;
+      width: auto;
+      border-radius: 6px;
+      box-shadow: 0 0 8px rgba(255,26,217,0.4);
+    }
+    .top-bar span {
+      background: linear-gradient(135deg, var(--c1), var(--c3));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* ── Full‑screen player container ── */
+    #player-container {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      z-index: 1;
+    }
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: fill;          /* stretch to fill entire screen */
+      background: #000;
+    }
+
+    /* ── Watermark ── */
+    .watermark {
+      position: fixed;
+      bottom: 50px;
+      left: 18px;
+      z-index: 9;
+      font-size: 11px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.12);
+      pointer-events: none;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Loading / error message ── */
+    .loading-msg {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-size: 1.1rem;
+      z-index: 5;
+      letter-spacing: 0.5px;
+      pointer-events: none;
+      text-align: center;
+    }
+    .error-msg {
+      color: #ff4da6;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Channel name + logo bar -->
+  <div class="top-bar" id="channelTitle">
+    <img src="https://jiotv.catchup.cdn.jio.com/dare_images/images/Disney_Channel.png" alt="Disney Channel" />
+    <span>Disney Channel · LIVE</span>
+  </div>
+
+  <!-- Watermark -->
+  <div class="watermark">JioTV Plus Web</div>
+
+  <!-- Shaka player container -->
+  <div id="player-container">
+    <video id="video" autoplay playsinline></video>
+    <div class="loading-msg" id="loadingMsg">⏳ Loading Disney Channel…</div>
+  </div>
+
+  <script>
+  // ═══════════════════════════════════════════════════════════════
+  //  CHANNEL DATA (embedded directly – no API call needed)
+  // ═══════════════════════════════════════════════════════════════
+  const channelData = {
+    id: "1373",
+    name: "Disney Channel",
+    logo: "https://jiotv.catchup.cdn.jio.com/dare_images/images/Disney_Channel.png",
+    type: "dash",
+    mpd_url: "https://jiotvmblive.cdn.jio.com/bpk-tv/Disney_Channel_MOB/WDVLive/index.mpd",
+    headers: {
+      cookie: "__hdnea__=st=1788255996~exp=1788277596~acl=/*~hmac=33d76ffa9ab217693755e2546f5090a1d5b0afd586b470bf75f035a6ed6feb8c"
+    },
+    clearkey: {
+      "400d0f354dca5d44a540cd80db766f4c": "22da170bb5ae36ef5cab42b3842658d8"
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════
+  //  CONSTANTS
+  // ═══════════════════════════════════════════════════════════════
+  const COOKIE_NAME = '__hdnea__';
+  const REFERER = 'https://www.jiotv.com/';
+  // Note: User‑Agent cannot be reliably set in browsers; provided for completeness.
+  const USER_AGENT = 'plaYtv/7.1.5 (Linux; Android 13) ExoPlayerLib/2.11.6';
+
+  // ═══════════════════════════════════════════════════════════════
+  //  DOM ELEMENTS
+  // ═══════════════════════════════════════════════════════════════
+  const loadingMsg = document.getElementById('loadingMsg');
+  const videoEl    = document.getElementById('video');
+  const container  = document.getElementById('player-container');
+
+  // ═══════════════════════════════════════════════════════════════
+  //  HELPERS
+  // ═══════════════════════════════════════════════════════════════
+  function showError(msg) {
+    if (loadingMsg) {
+      loadingMsg.innerHTML = '<span class="error-msg">❌ ' + msg + '</span>';
+    }
+  }
+
+  function removeLoading() {
+    if (loadingMsg) loadingMsg.remove();
+  }
+
+  // Extract the __hdnea__ token from a cookie string
+  function extractTokenFromCookie(cookieString) {
+    if (!cookieString) return null;
+    const parts = cookieString.split(';');
+    for (let part of parts) {
+      part = part.trim();
+      if (part.startsWith(COOKIE_NAME + '=')) {
+        return part.substring(COOKIE_NAME.length + 1);
+      }
+    }
+    return null;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  SHAKA PLAYER SETUP
+  // ═══════════════════════════════════════════════════════════════
+  function initPlayer() {
+    // Validate required fields
+    if (!channelData.mpd_url) {
+      showError('Missing MPD URL');
+      return;
+    }
+    if (!channelData.clearkey || Object.keys(channelData.clearkey).length === 0) {
+      showError('No ClearKey DRM information');
+      return;
+    }
+    const token = extractTokenFromCookie(channelData.headers?.cookie);
+    if (!token) {
+      showError('No authentication token found in cookie');
+      return;
+    }
+
+    if (typeof shaka === 'undefined') {
+      showError('Shaka Player library not loaded');
+      return;
+    }
+    shaka.polyfill.installAll();
+    if (!shaka.Player.isBrowserSupported()) {
+      showError('Shaka Player not supported in this browser');
+      return;
+    }
+
+    // Create player and attach to video element
+    const player = new shaka.Player();
+    player.attach(videoEl).then(() => {
+      // Attach Shaka UI overlay (controls, buffering spinner, etc.)
+      new shaka.ui.Overlay(player, container, videoEl);
+
+      // ── DRM Configuration ──
+      // ClearKey keys: object mapping key IDs to keys (hex without dashes)
+      player.configure({
+        drm: {
+          clearKeys: channelData.clearkey
+        }
+      });
+
+      // ── Streaming configuration ──
+      player.configure({
+        streaming: {
+          lowLatencyMode: true,
+          // Optional: set buffering goals for smoother playback
+          bufferingGoal: 30,
+          bufferBehind: 30,
+          // Retry parameters for robustness
+          retryParameters: {
+            maxAttempts: 5,
+            baseDelay: 1000,
+            backoffFactor: 2,
+            fuzzFactor: 0.5,
+            timeout: 30000
+          }
+        }
+      });
+
+      // ── Request Filter ──
+      // Append the token as a query parameter to every manifest & segment request.
+      // This bypasses browser restrictions on setting Cookie headers cross‑origin.
+      player.getNetworkingEngine().registerRequestFilter((type, request) => {
+        // Set Referer header (browser may ignore)
+        request.headers['Referer'] = REFERER;
+        // Attempt to set User‑Agent (may be ignored by browser)
+        try { request.headers['User-Agent'] = USER_AGENT; } catch(e) {}
+
+        // Only modify manifest and segment requests (not license, etc.)
+        if (type === shaka.net.NetworkingEngine.RequestType.MANIFEST ||
+            type === shaka.net.NetworkingEngine.RequestType.SEGMENT) {
+          const originalUri = request.uris[0];
+          const separator = originalUri.includes('?') ? '&' : '?';
+          // Append the token, preserving any existing query string
+          request.uris[0] = originalUri + separator + COOKIE_NAME + '=' + encodeURIComponent(token);
+        }
+      });
+
+      // ── Load the stream ──
+      return player.load(channelData.mpd_url);
+    }).then(() => {
+      removeLoading();
+      videoEl.play().catch(e => console.warn('Autoplay was prevented:', e));
+      console.log('Playback started successfully');
+    }).catch(error => {
+      console.error('Shaka error:', error);
+      showError('Playback failed: ' + error.message);
+    });
+  }
+
+  // Start the player
+  initPlayer();
+  </script>
+</body>
+</html>
