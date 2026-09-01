@@ -1,273 +1,516 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="referrer" content="no-referrer" />
-  <title>Disney Channel · JioTV Plus</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>Disney Channel · Live</title>
   <link rel="icon" type="image/png" href="https://jiotv.catchup.cdn.jio.com/dare_images/images/Disney_Channel.png" />
-
-  <!-- Shaka Player -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.11/shaka-player.ui.min.js"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.11/controls.min.css" />
-
+  <script src="https://content.jwplatform.com/libraries/SAHhwvZq.js"></script>
   <style>
-    :root {
-      --c1: #ff1ad9;
-      --c3: #00e0ff;
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root { --app-height: 100dvh; }
+
     html, body {
       background: #000;
       width: 100%;
-      height: 100%;
+      height: var(--app-height);
+      min-height: 0;
       overflow: hidden;
-      font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    }
-
-    /* ── Top bar (channel info) ── */
-    .top-bar {
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      padding: 12px 20px;
-      background: linear-gradient(to bottom, rgba(3,0,13,0.9), transparent);
-      color: white;
-      font-weight: 700;
-      font-size: 16px;
-      z-index: 10;
-      pointer-events: none;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .top-bar img {
-      height: 28px;
-      width: auto;
-      border-radius: 6px;
-      box-shadow: 0 0 8px rgba(255,26,217,0.4);
-    }
-    .top-bar span {
-      background: linear-gradient(135deg, var(--c1), var(--c3));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    /* ── Full‑screen player container ── */
-    #player-container {
       position: fixed;
       inset: 0;
-      background: #000;
-      z-index: 1;
+      touch-action: manipulation;
+      overscroll-behavior: none;
+      user-select: none;
+      -webkit-user-select: none;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     }
-    #video {
+
+    #playerContainer {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: var(--app-height);
+      max-height: var(--app-height);
+      background: #000;
+      isolation: isolate;
+      overflow: hidden;
+    }
+
+    #playerInner {
+      position: absolute;
+      inset: 0;
       width: 100%;
       height: 100%;
-      object-fit: fill;          /* stretch to fill entire screen */
+      max-height: 100%;
       background: #000;
+      pointer-events: auto;
+      overflow: hidden;
     }
 
-    /* ── Watermark ── */
-    .watermark {
+    /* Back button */
+    .back-btn {
       position: fixed;
-      bottom: 50px;
-      left: 18px;
-      z-index: 9;
-      font-size: 11px;
-      font-weight: 700;
-      color: rgba(255,255,255,0.12);
-      pointer-events: none;
-      letter-spacing: 0.5px;
+      top: max(20px, env(safe-area-inset-top));
+      left: max(20px, env(safe-area-inset-left));
+      z-index: 9999;
+      width: 42px;
+      height: 42px;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1.2rem;
+      transition: background 0.2s, transform 0.2s;
+      text-decoration: none;
+      pointer-events: auto;
     }
+    .back-btn:hover { background: #e50914; transform: scale(1.1); }
 
-    /* ── Loading / error message ── */
     .loading-msg {
-      position: fixed;
-      top: 50%; left: 50%;
+      position: absolute;
+      top: 50%;
+      left: 50%;
       transform: translate(-50%, -50%);
-      color: white;
+      color: #fff;
       font-size: 1.1rem;
-      z-index: 5;
-      letter-spacing: 0.5px;
-      pointer-events: none;
       text-align: center;
+      z-index: 5;
+      pointer-events: none;
     }
-    .error-msg {
-      color: #ff4da6;
+
+    /* Double-tap ripple */
+    .tap-ripple {
+      position: fixed;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.25);
+      transform: translate(-50%, -50%) scale(0);
+      pointer-events: none;
+      z-index: 8000;
+      animation: tapRipple 0.4s ease-out forwards;
+    }
+    @keyframes tapRipple {
+      0%   { transform: translate(-50%, -50%) scale(0); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
     }
   </style>
 </head>
 <body>
-
-  <!-- Channel name + logo bar -->
-  <div class="top-bar" id="channelTitle">
-    <img src="https://jiotv.catchup.cdn.jio.com/dare_images/images/Disney_Channel.png" alt="Disney Channel" />
-    <span>Disney Channel · LIVE</span>
-  </div>
-
-  <!-- Watermark -->
-  <div class="watermark">JioTV Plus Web</div>
-
-  <!-- Shaka player container -->
-  <div id="player-container">
-    <video id="video" autoplay playsinline></video>
-    <div class="loading-msg" id="loadingMsg">⏳ Loading Disney Channel…</div>
+  <button class="back-btn" id="backBtn" aria-label="Back">←</button>
+  <div id="playerContainer">
+    <div id="playerInner">
+      <div class="loading-msg" id="loadingMsg">Loading stream…</div>
+    </div>
   </div>
 
   <script>
-  // ═══════════════════════════════════════════════════════════════
-  //  CHANNEL DATA (embedded directly – no API call needed)
-  // ═══════════════════════════════════════════════════════════════
-  const channelData = {
-    id: "1373",
-    name: "Disney Channel",
-    logo: "https://jiotv.catchup.cdn.jio.com/dare_images/images/Disney_Channel.png",
-    type: "dash",
-    mpd_url: "https://jiotvmblive.cdn.jio.com/bpk-tv/Disney_Channel_MOB/WDVLive/index.mpd",
-    headers: {
-      cookie: "__hdnea__=st=1788255996~exp=1788277596~acl=/*~hmac=33d76ffa9ab217693755e2546f5090a1d5b0afd586b470bf75f035a6ed6feb8c"
-    },
-    clearkey: {
-      "400d0f354dca5d44a540cd80db766f4c": "22da170bb5ae36ef5cab42b3842658d8"
+  (() => {
+    "use strict";
+
+    // ═══════════════════════════════════════════════════════════════
+    //  HARDCODED DISNEY CHANNEL DATA
+    // ═══════════════════════════════════════════════════════════════
+    const CHANNEL = {
+      id: "1373",
+      name: "Disney Channel",
+      logo: "https://jiotv.catchup.cdn.jio.com/dare_images/images/Disney_Channel.png",
+      streamUrl: "https://jiotvmblive.cdn.jio.com/bpk-tv/Disney_Channel_MOB/WDVLive/index.mpd",
+      cookie: "__hdnea__=st=1788255996~exp=1788277596~acl=/*~hmac=33d76ffa9ab217693755e2546f5090a1d5b0afd586b470bf75f035a6ed6feb8c",
+      clearkey: {
+        keyId: "400d0f354dca5d44a540cd80db766f4c",
+        key:   "22da170bb5ae36ef5cab42b3842658d8"
+      }
+    };
+
+    // ── Constants ──────────────────────────────────────────────
+    const JIO_REFS = ['jiotvpllive.cdn.jio.com','jiotv.media.jio.com','jiotvmblive.cdn.jio.com','jio.com'];
+    const REF_URL  = 'https://www.jiotv.co/';
+
+    // Double-tap state
+    const DOUBLE_TAP_MS = 300;
+    let lastTapTime     = 0;
+    let lastTapTarget   = null;
+    let lastTapX        = 0;
+    let lastTapY        = 0;
+
+    let player        = null;
+    let streamUrl     = '';
+    let lastPos       = -1;
+    let freezeCount   = 0;
+    let errorRetries  = 0;
+    const MAX_RETRIES = 5;
+
+    // Control bar auto-hide
+    let idleTimer = null;
+    const IDLE_MS = 3000;
+
+    const $   = id => document.getElementById(id);
+    const isJioCDN = url => typeof url === 'string' && JIO_REFS.some(h => url.includes(h));
+
+    function getVisibleViewport() {
+      const vv = window.visualViewport;
+      return {
+        width:  Math.max(1, Math.round(vv?.width  || window.innerWidth  || document.documentElement.clientWidth)),
+        height: Math.max(1, Math.round(vv?.height || window.innerHeight || document.documentElement.clientHeight))
+      };
     }
-  };
 
-  // ═══════════════════════════════════════════════════════════════
-  //  CONSTANTS
-  // ═══════════════════════════════════════════════════════════════
-  const COOKIE_NAME = '__hdnea__';
-  const REFERER = 'https://www.jiotv.com/';
-  // Note: User‑Agent cannot be reliably set in browsers; provided for completeness.
-  const USER_AGENT = 'plaYtv/7.1.5 (Linux; Android 13) ExoPlayerLib/2.11.6';
-
-  // ═══════════════════════════════════════════════════════════════
-  //  DOM ELEMENTS
-  // ═══════════════════════════════════════════════════════════════
-  const loadingMsg = document.getElementById('loadingMsg');
-  const videoEl    = document.getElementById('video');
-  const container  = document.getElementById('player-container');
-
-  // ═══════════════════════════════════════════════════════════════
-  //  HELPERS
-  // ═══════════════════════════════════════════════════════════════
-  function showError(msg) {
-    if (loadingMsg) {
-      loadingMsg.innerHTML = '<span class="error-msg">❌ ' + msg + '</span>';
+    function applyViewportSize(resizeJw = true) {
+      const { height } = getVisibleViewport();
+      document.documentElement.style.setProperty('--app-height', height + 'px');
+      requestAnimationFrame(() => {
+        if (!resizeJw || !player) return;
+        const host = $('playerContainer');
+        if (host) player.resize(host.clientWidth, host.clientHeight);
+      });
     }
-  }
 
-  function removeLoading() {
-    if (loadingMsg) loadingMsg.remove();
-  }
+    function extractToken(cookie) {
+      return String(cookie || '').match(/__hdnea__=([^;]+)/)?.[1] || '';
+    }
+    function addToken(url, token) {
+      if (!url || !token || url.includes('__hdnea__=')) return url;
+      return `${url}${url.includes('?') ? '&' : '?'}__hdnea__=${token}`;
+    }
 
-  // Extract the __hdnea__ token from a cookie string
-  function extractTokenFromCookie(cookieString) {
-    if (!cookieString) return null;
-    const parts = cookieString.split(';');
-    for (let part of parts) {
-      part = part.trim();
-      if (part.startsWith(COOKIE_NAME + '=')) {
-        return part.substring(COOKIE_NAME.length + 1);
+    // ── Interceptors: append token & set Referer on all Jio CDN requests ──
+    function installInterceptors(token) {
+      if (!token) return;
+
+      const origOpen   = XMLHttpRequest.prototype.open;
+      const origSetHdr = XMLHttpRequest.prototype.setRequestHeader;
+      const origSend   = XMLHttpRequest.prototype.send;
+
+      XMLHttpRequest.prototype.open = function(method, url, ...args) {
+        if (isJioCDN(url) && !url.includes('__hdnea__=')) {
+          url += (url.includes('?') ? '&' : '?') + '__hdnea__=' + token;
+        }
+        this._isJio = isJioCDN(url);
+        return origOpen.apply(this, [method, url, ...args]);
+      };
+      XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
+        const lh = header.toLowerCase();
+        if (lh === 'user-agent') return; // cannot set UA in browser
+        if (lh === 'referer' && this._isJio) value = REF_URL;
+        return origSetHdr.call(this, header, value);
+      };
+      XMLHttpRequest.prototype.send = function(body) {
+        if (this._isJio) { try { origSetHdr.call(this, 'Referer', REF_URL); } catch {} }
+        return origSend.call(this, body);
+      };
+
+      const origFetch = window.fetch;
+      window.fetch = function(input, init = {}) {
+        const url = typeof input === 'string' ? input : (input?.url || '');
+        if (!isJioCDN(url)) return origFetch.call(this, input, init);
+        const patched = url.includes('__hdnea__=') ? url : url + (url.includes('?') ? '&' : '?') + '__hdnea__=' + token;
+        const headers = new Headers(init.headers || {});
+        headers.set('Referer', REF_URL);
+        return origFetch.call(this, typeof input === 'string' ? patched : new Request(patched, { ...init, headers }), { ...init, headers });
+      };
+    }
+
+    // ── DRM configuration for JW Player ────────────────────────
+    function buildDRM(channel) {
+      if (channel.clearkey && channel.clearkey.keyId && channel.clearkey.key) {
+        return {
+          clearkey: {
+            keyId: channel.clearkey.keyId,
+            key:   channel.clearkey.key
+          }
+        };
+      }
+      return null;
+    }
+
+    // ── Show error message ─────────────────────────────────────
+    function showLoadingError(msg) {
+      const el = $('loadingMsg');
+      if (el) el.innerHTML = `<span style="color:#ff5555;">❌ ${msg}</span>`;
+    }
+
+    // ── Setup JW Player ────────────────────────────────────────
+    function setupPlayer(channel) {
+      try {
+        player = jwplayer('playerInner');
+        const cfg = {
+          file:        streamUrl,
+          autostart:   true,
+          mute:        false,
+          width:       '100%',
+          height:      '100%',
+          stretching:  'exactfit',
+          controls:    true,
+          skin:        { name: 'netflix' },
+          displaytitle:       false,
+          displaydescription: false,
+          preload:     'auto',
+          liveTimeout: 0,
+          cast:        {},
+          customHeaders: { Referer: REF_URL } // JW Player may use this for some requests
+        };
+        const drm = buildDRM(channel);
+        if (drm) cfg.drm = drm;
+        player.setup(cfg);
+      } catch (err) {
+        showLoadingError('Player setup failed');
+        return;
+      }
+
+      player.on('ready', () => {
+        $('loadingMsg')?.remove();
+        errorRetries = 0;
+        applyViewportSize(true);
+        injectControlCSS();
+        installControlVisibility();
+        addPipButton();
+        installDoubleTapFullscreen();
+        showControls(true);
+      });
+
+      // Freeze detection & auto-reload
+      setInterval(() => {
+        if (!player || player.getState() !== 'playing') { freezeCount = 0; return; }
+        const pos = player.getPosition();
+        if (pos === lastPos) {
+          if (++freezeCount > 3) {
+            player.load([{ file: streamUrl + '?t=' + Date.now() }]);
+            player.play();
+            freezeCount = 0;
+            lastPos = -1;
+          }
+        } else { lastPos = pos; freezeCount = 0; }
+      }, 3000);
+
+      player.on('error', (err) => {
+        console.error('[LivePlayer] Error:', err.message);
+        if (errorRetries < MAX_RETRIES) {
+          errorRetries++;
+          setTimeout(() => {
+            player.load([{ file: streamUrl + '?retry=' + errorRetries }]);
+            player.play();
+          }, Math.min(2000 * errorRetries, 10000));
+        } else {
+          showLoadingError('Stream unavailable. Refresh to retry.');
+        }
+      });
+
+      player.on('fullscreen', (e) => { if (e.fullscreen) showControls(true); });
+    }
+
+    // ── CSS for control visibility (same as original) ──────────
+    function injectControlCSS() {
+      if ($('jw-ctrl-fix')) return;
+      const s = document.createElement('style');
+      s.id = 'jw-ctrl-fix';
+      s.textContent = `
+        #playerInner.jwplayer,
+        #playerInner .jw-wrapper {
+          position: absolute !important;
+          inset: 0 !important;
+          width: 100% !important;
+          height: 100% !important;
+          max-height: 100% !important;
+          overflow: hidden !important;
+        }
+        #playerInner .jw-media { position: absolute !important; inset: 0 !important; }
+        #playerInner .jw-controls { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; overflow: visible !important; }
+        #playerInner .jw-controlbar {
+          position: absolute !important;
+          left: 0 !important; right: 0 !important; bottom: 0 !important; top: auto !important;
+          width: 100% !important; min-height: 48px !important;
+          padding-bottom: env(safe-area-inset-bottom) !important;
+          pointer-events: none !important;
+          opacity: 0 !important; transform: translateY(6px) !important;
+          transition: opacity 0.25s ease, transform 0.25s ease !important;
+          z-index: 30 !important;
+        }
+        #playerInner .jw-controls-backdrop {
+          background: linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 100%) !important;
+          opacity: 0 !important;
+          transition: opacity 0.25s ease !important;
+        }
+        #playerContainer.ctrl-active #playerInner .jw-controlbar {
+          opacity: 1 !important; transform: translateY(0) !important; pointer-events: auto !important;
+        }
+        #playerContainer.ctrl-active #playerInner .jw-controls-backdrop { opacity: 1 !important; }
+        #playerInner.jw-flag-controlbar-dragging .jw-controlbar {
+          opacity: 1 !important; transform: translateY(0) !important; pointer-events: auto !important;
+        }
+        #playerInner .jw-display { z-index: 2 !important; }
+        #playerContainer.ctrl-active #playerInner .jw-slider-time .jw-knob,
+        #playerContainer.ctrl-active #playerInner .jw-icon-playback,
+        #playerContainer.ctrl-active #playerInner .jw-icon-volume,
+        #playerContainer.ctrl-active #playerInner .jw-icon-fullscreen {
+          pointer-events: auto !important; cursor: pointer !important;
+        }
+        #backBtn { opacity: 0; pointer-events: none; transition: opacity 0.25s ease; }
+        #playerContainer.ctrl-active #backBtn,
+        body:not(.playing) #backBtn { opacity: 1; pointer-events: auto; }
+      `;
+      document.head.appendChild(s);
+    }
+
+    // ── Control visibility system ──────────────────────────────
+    function showControls(autoHide = true) {
+      const container = $('playerContainer');
+      if (!container) return;
+      container.classList.add('ctrl-active');
+      clearTimeout(idleTimer);
+      if (autoHide) {
+        idleTimer = setTimeout(() => {
+          const inner = $('playerInner');
+          if (inner && inner.classList.contains('jw-flag-controlbar-dragging')) {
+            showControls(true);
+            return;
+          }
+          container.classList.remove('ctrl-active');
+        }, IDLE_MS);
       }
     }
-    return null;
-  }
 
-  // ═══════════════════════════════════════════════════════════════
-  //  SHAKA PLAYER SETUP
-  // ═══════════════════════════════════════════════════════════════
-  function initPlayer() {
-    // Validate required fields
-    if (!channelData.mpd_url) {
-      showError('Missing MPD URL');
-      return;
-    }
-    if (!channelData.clearkey || Object.keys(channelData.clearkey).length === 0) {
-      showError('No ClearKey DRM information');
-      return;
-    }
-    const token = extractTokenFromCookie(channelData.headers?.cookie);
-    if (!token) {
-      showError('No authentication token found in cookie');
-      return;
+    function hideControls() {
+      clearTimeout(idleTimer);
+      $('playerContainer')?.classList.remove('ctrl-active');
     }
 
-    if (typeof shaka === 'undefined') {
-      showError('Shaka Player library not loaded');
-      return;
-    }
-    shaka.polyfill.installAll();
-    if (!shaka.Player.isBrowserSupported()) {
-      showError('Shaka Player not supported in this browser');
-      return;
-    }
-
-    // Create player and attach to video element
-    const player = new shaka.Player();
-    player.attach(videoEl).then(() => {
-      // Attach Shaka UI overlay (controls, buffering spinner, etc.)
-      new shaka.ui.Overlay(player, container, videoEl);
-
-      // ── DRM Configuration ──
-      // ClearKey keys: object mapping key IDs to keys (hex without dashes)
-      player.configure({
-        drm: {
-          clearKeys: channelData.clearkey
-        }
+    function installControlVisibility() {
+      const container = $('playerContainer');
+      if (!container) return;
+      ['pointermove', 'pointerdown', 'touchstart', 'keydown', 'mousedown'].forEach(evt => {
+        container.addEventListener(evt, () => showControls(true), { passive: true });
       });
 
-      // ── Streaming configuration ──
-      player.configure({
-        streaming: {
-          lowLatencyMode: true,
-          // Optional: set buffering goals for smoother playback
-          bufferingGoal: 30,
-          bufferBehind: 30,
-          // Retry parameters for robustness
-          retryParameters: {
-            maxAttempts: 5,
-            baseDelay: 1000,
-            backoffFactor: 2,
-            fuzzFactor: 0.5,
-            timeout: 30000
+      const inner = $('playerInner');
+      if (inner) {
+        new MutationObserver(() => {
+          if (inner.classList.contains('jw-flag-controlbar-dragging')) {
+            showControls(false); // keep visible while dragging
           }
+        }).observe(inner, { attributes: true, attributeFilter: ['class'] });
+      }
+    }
+
+    // ── Double-tap fullscreen ──────────────────────────────────
+    function installDoubleTapFullscreen() {
+      const container = $('playerInner');
+      if (!container) return;
+
+      container.addEventListener('touchend', (e) => {
+        if (e.changedTouches.length !== 1) return;
+        if (e.target.closest?.('.jw-controlbar, .jw-display-icon-container, button')) {
+          lastTapTime = 0; lastTapTarget = null; return;
         }
-      });
-
-      // ── Request Filter ──
-      // Append the token as a query parameter to every manifest & segment request.
-      // This bypasses browser restrictions on setting Cookie headers cross‑origin.
-      player.getNetworkingEngine().registerRequestFilter((type, request) => {
-        // Set Referer header (browser may ignore)
-        request.headers['Referer'] = REFERER;
-        // Attempt to set User‑Agent (may be ignored by browser)
-        try { request.headers['User-Agent'] = USER_AGENT; } catch(e) {}
-
-        // Only modify manifest and segment requests (not license, etc.)
-        if (type === shaka.net.NetworkingEngine.RequestType.MANIFEST ||
-            type === shaka.net.NetworkingEngine.RequestType.SEGMENT) {
-          const originalUri = request.uris[0];
-          const separator = originalUri.includes('?') ? '&' : '?';
-          // Append the token, preserving any existing query string
-          request.uris[0] = originalUri + separator + COOKIE_NAME + '=' + encodeURIComponent(token);
+        const now = Date.now();
+        const touch = e.changedTouches[0];
+        const delta = now - lastTapTime;
+        const near = lastTapTarget === e.target &&
+          Math.hypot(touch.clientX - lastTapX, touch.clientY - lastTapY) < 80;
+        if (delta < DOUBLE_TAP_MS && near) {
+          e.preventDefault();
+          spawnRipple(touch.clientX, touch.clientY);
+          toggleFullscreen();
+          lastTapTime = 0; lastTapTarget = null;
+        } else {
+          lastTapTime = now; lastTapTarget = e.target;
+          lastTapX = touch.clientX; lastTapY = touch.clientY;
         }
-      });
+      }, { passive: false });
+    }
 
-      // ── Load the stream ──
-      return player.load(channelData.mpd_url);
-    }).then(() => {
-      removeLoading();
-      videoEl.play().catch(e => console.warn('Autoplay was prevented:', e));
-      console.log('Playback started successfully');
-    }).catch(error => {
-      console.error('Shaka error:', error);
-      showError('Playback failed: ' + error.message);
+    function toggleFullscreen() {
+      const container = $('playerContainer');
+      const inFs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement);
+      if (inFs) {
+        (document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen)?.call(document);
+      } else {
+        const req = container.requestFullscreen || container.webkitRequestFullscreen || container.mozRequestFullScreen;
+        if (req) {
+          Promise.resolve(req.call(container)).then(() => {
+            showControls(true);
+            setTimeout(() => applyViewportSize(true), 300);
+          }).catch(() => {});
+        }
+      }
+    }
+
+    function spawnRipple(x, y) {
+      const el = document.createElement('div');
+      el.className = 'tap-ripple';
+      el.style.left = x + 'px';
+      el.style.top  = y + 'px';
+      document.body.appendChild(el);
+      el.addEventListener('animationend', () => el.remove());
+    }
+
+    // ── PiP button ─────────────────────────────────────────────
+    function addPipButton() {
+      if (!document.pictureInPictureEnabled) return;
+      player.addButton(
+        'https://cdn.iconscout.com/icon/free/png-256/free-to-pip-icon-svg-download-png-7791478.png?f=webp',
+        'Picture-in-Picture',
+        async () => {
+          try {
+            const video = document.querySelector('#playerInner video');
+            if (!video) return;
+            document.pictureInPictureElement
+              ? await document.exitPictureInPicture()
+              : await video.requestPictureInPicture();
+          } catch (err) { console.error('PiP error:', err); }
+        },
+        'pip',
+        'jw-icon-pip'
+      );
+    }
+
+    // ── Resize handler ─────────────────────────────────────────
+    let resizeTimer;
+    function syncPlayerSize() {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => applyViewportSize(true), 80);
+    }
+    window.addEventListener('resize', syncPlayerSize);
+    window.addEventListener('orientationchange', syncPlayerSize);
+    window.visualViewport?.addEventListener('resize', syncPlayerSize);
+    window.visualViewport?.addEventListener('scroll', syncPlayerSize);
+    document.addEventListener('fullscreenchange', () => {
+      syncPlayerSize();
+      if (document.fullscreenElement) { showControls(true); setTimeout(syncPlayerSize, 200); }
     });
-  }
+    document.addEventListener('webkitfullscreenchange', () => {
+      syncPlayerSize();
+      if (document.webkitFullscreenElement) { showControls(true); setTimeout(syncPlayerSize, 200); }
+    });
 
-  // Start the player
-  initPlayer();
+    // ── Back button ────────────────────────────────────────────
+    $('backBtn').addEventListener('click', () => {
+      try {
+        const inFs = document.fullscreenElement || document.webkitFullscreenElement;
+        if (inFs) {
+          const exit = document.exitFullscreen || document.webkitExitFullscreen;
+          if (exit) { exit.call(document).finally(() => history.back()); return; }
+        }
+      } catch (_) {}
+      history.back();
+    });
+
+    // ── Boot ──────────────────────────────────────────────────
+    const token = extractToken(CHANNEL.cookie);
+    streamUrl = addToken(CHANNEL.streamUrl, token);
+    installInterceptors(token);
+    document.title = CHANNEL.name + ' · Live';
+    applyViewportSize(false);
+    setupPlayer(CHANNEL);
+  })();
   </script>
 </body>
 </html>
